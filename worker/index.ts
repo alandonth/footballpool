@@ -51,7 +51,32 @@ async function updateMe(req:Request,env:Env,user:User){const b=await body(req),t
 async function listPools(env:Env,user:User){const rows=await env.DB.prepare("SELECT p.* FROM memberships m JOIN pools p ON p.id=m.pool_id WHERE m.user_id=? ORDER BY p.created_at").bind(user.id).all();return json({pools:rows.results})}
 async function changePool(req:Request,env:Env,user:User){const b=await body(req);if(b.action==="create"){const name=String(b.name||"").trim().slice(0,50);if(!name)return json({error:"Pool name required."},400);const pool={id:crypto.randomUUID(),name,invite_code:inviteCode(),owner_id:user.id,season:SEASON,created_at:Date.now()};await env.DB.batch([env.DB.prepare("INSERT INTO pools(id,name,invite_code,owner_id,season,created_at) VALUES(?,?,?,?,?,?)").bind(...Object.values(pool)),env.DB.prepare("INSERT INTO memberships(id,pool_id,user_id,joined_at) VALUES(?,?,?,?)").bind(crypto.randomUUID(),pool.id,user.id,Date.now())]);return json({pool})}if(b.action==="join"){const pool=await env.DB.prepare("SELECT * FROM pools WHERE invite_code=?").bind(String(b.inviteCode||"").toUpperCase()).first<any>();if(!pool)return json({error:"Invite code not found."},404);await env.DB.prepare("INSERT OR IGNORE INTO memberships(id,pool_id,user_id,joined_at) VALUES(?,?,?,?)").bind(crypto.randomUUID(),pool.id,user.id,Date.now()).run();return json({pool})}return json({error:"Invalid action."},400)}
 
-async function schedule(url:URL,env:Env,ctx:ExecutionContext){const week=clampWeek(url.searchParams.get("week")),rows=await gamesForWeek(env,week);const stale=!rows.length||Date.now()-Number(rows[0]?.source_updated_at||0)>15*60_000;if(stale)ctx.waitUntil(syncWeek(env,week));if(!rows.length){try{await syncWeek(env,week)}catch{} }const games=await gamesForWeek(env,week);return json({week,games:games.map(gameDto),lastUpdated:games[0]?.source_updated_at||null,stale:!games.length||Date.now()-Number(games[0]?.source_updated_at||0)>30*60_000})}
+async function schedule(url:URL,env:Env,ctx:ExecutionContext){
+ const week=clampWeek(url.searchParams.get("week"));
+ const rows=await gamesForWeek(env,week);
+
+ if(!rows.length){
+  try{
+   await syncWeek(env,week);
+  }catch(error){
+   console.error(`Initial Week ${week} schedule sync failed`,error);
+  }
+ }else if(Date.now()-Number(rows[0]?.source_updated_at||0)>15*60_000){
+  ctx.waitUntil(
+   syncWeek(env,week).catch(error=>
+    console.error(`Background Week ${week} schedule sync failed`,error)
+   )
+  );
+ }
+
+ const games=await gamesForWeek(env,week);
+ return json({
+  week,
+  games:games.map(gameDto),
+  lastUpdated:games[0]?.source_updated_at||null,
+  stale:!games.length||Date.now()-Number(games[0]?.source_updated_at||0)>30*60_000
+ });
+}
 async function gamesForWeek(env:Env,week:number){return (await env.DB.prepare("SELECT * FROM games WHERE season=? AND week=? ORDER BY start_time").bind(SEASON,week).all<any>()).results}
 async function syncRelevantWeeks(env:Env){const all=Array.from({length:18},(_,i)=>i+1);for(const week of all){try{const rows=await gamesForWeek(env,week),near=rows.some(g=>Math.abs(new Date(g.start_time).getTime()-Date.now())<8*86400000);if(!rows.length||near)await syncWeek(env,week)}catch(error){console.error(`Week ${week} sync failed`,error)}}}
 async function syncWeek(env:Env,week:number){

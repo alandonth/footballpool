@@ -1,0 +1,12 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, display_name TEXT, role TEXT NOT NULL DEFAULT 'player' CHECK(role IN ('player','admin')), theme TEXT NOT NULL DEFAULT 'stadium', logo_mode TEXT NOT NULL DEFAULT 'espn' CHECK(logo_mode IN ('espn','badge')), must_change_password INTEGER NOT NULL DEFAULT 0, disabled INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (id_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS pools (id TEXT PRIMARY KEY, name TEXT NOT NULL, invite_code TEXT NOT NULL UNIQUE, owner_id TEXT NOT NULL REFERENCES users(id), season INTEGER NOT NULL DEFAULT 2026, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS memberships (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL REFERENCES pools(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, joined_at INTEGER NOT NULL, UNIQUE(pool_id,user_id));
+CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
+CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, season INTEGER NOT NULL, week INTEGER NOT NULL, start_time TEXT NOT NULL, lock_override TEXT, status TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, home_id TEXT NOT NULL, home_abbr TEXT NOT NULL, home_name TEXT NOT NULL, home_logo TEXT, home_score INTEGER, away_id TEXT NOT NULL, away_abbr TEXT NOT NULL, away_name TEXT NOT NULL, away_logo TEXT, away_score INTEGER, winner_id TEXT, source_updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_games_season_week ON games(season,week);
+CREATE TABLE IF NOT EXISTS picks (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL REFERENCES pools(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, game_id TEXT NOT NULL REFERENCES games(id), team_id TEXT NOT NULL, updated_at INTEGER NOT NULL, admin_adjusted INTEGER NOT NULL DEFAULT 0, UNIQUE(pool_id,user_id,game_id));
+CREATE INDEX IF NOT EXISTS idx_picks_pool_user ON picks(pool_id,user_id);
+CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL, old_value TEXT, new_value TEXT, reason TEXT NOT NULL, created_at INTEGER NOT NULL);

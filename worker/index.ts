@@ -54,11 +54,13 @@ async function changePool(req:Request,env:Env,user:User){const b=await body(req)
 async function schedule(url:URL,env:Env,ctx:ExecutionContext){
  const week=clampWeek(url.searchParams.get("week"));
  const rows=await gamesForWeek(env,week);
+ let syncError:string|null=null;
 
  if(!rows.length){
   try{
    await syncWeek(env,week);
   }catch(error){
+   syncError=error instanceof Error?error.message:String(error);
    console.error(`Initial Week ${week} schedule sync failed`,error);
   }
  }else if(Date.now()-Number(rows[0]?.source_updated_at||0)>15*60_000){
@@ -74,7 +76,8 @@ async function schedule(url:URL,env:Env,ctx:ExecutionContext){
   week,
   games:games.map(gameDto),
   lastUpdated:games[0]?.source_updated_at||null,
-  stale:!games.length||Date.now()-Number(games[0]?.source_updated_at||0)>30*60_000
+  stale:!games.length||Date.now()-Number(games[0]?.source_updated_at||0)>30*60_000,
+  syncError
  });
 }
 async function gamesForWeek(env:Env,week:number){return (await env.DB.prepare("SELECT * FROM games WHERE season=? AND week=? ORDER BY start_time").bind(SEASON,week).all<any>()).results}

@@ -1,7 +1,6 @@
 interface Env { DB:D1Database; ASSETS:Fetcher; AUTH_PEPPER:string }
 type User={id:string;username:string;display_name:string|null;role:"player"|"admin";theme:string;logo_mode:"espn"|"badge";must_change_password:number};
-const SEASON=2026, SESSION_DAYS=30, ESPN="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
-
+const SEASON=2026, SESSION_DAYS=30, ESPN="https://cdn.espn.com/core/nfl/scoreboard";
 export default {
  async fetch(request:Request,env:Env,ctx:ExecutionContext){
   const url=new URL(request.url);if(!url.pathname.startsWith("/api/"))return env.ASSETS.fetch(request);
@@ -83,8 +82,9 @@ async function schedule(url:URL,env:Env,ctx:ExecutionContext){
 async function gamesForWeek(env:Env,week:number){return (await env.DB.prepare("SELECT * FROM games WHERE season=? AND week=? ORDER BY start_time").bind(SEASON,week).all<any>()).results}
 async function syncRelevantWeeks(env:Env){const all=Array.from({length:18},(_,i)=>i+1);for(const week of all){try{const rows=await gamesForWeek(env,week),near=rows.some(g=>Math.abs(new Date(g.start_time).getTime()-Date.now())<8*86400000);if(!rows.length||near)await syncWeek(env,week)}catch(error){console.error(`Week ${week} sync failed`,error)}}}
 async function syncWeek(env:Env,week:number){
- const response=await fetch(`${ESPN}?seasontype=2&week=${week}&dates=${SEASON}`,{headers:{accept:"application/json","user-agent":"FamilyPickem/1.0"}});if(!response.ok)throw new Error(`ESPN ${response.status}`);const data:any=await response.json(),now=Date.now(),stmts:D1PreparedStatement[]=[];
- for(const event of data.events||[]){const c=event.competitions?.[0],home=c?.competitors?.find((x:any)=>x.homeAway==="home"),away=c?.competitors?.find((x:any)=>x.homeAway==="away");if(!home||!away)continue;const values=[String(event.id),SEASON,week,event.date,event.status?.type?.shortDetail||"Scheduled",event.status?.type?.completed?1:0,String(home.team.id),home.team.abbreviation,home.team.displayName,home.team.logo||null,score(home.score),String(away.team.id),away.team.abbreviation,away.team.displayName,away.team.logo||null,score(away.score),home.winner?String(home.team.id):away.winner?String(away.team.id):null,now];
+const response=await fetch(`${ESPN}?xhr=1&seasontype=2&week=${week}&dates=${SEASON}`,{headers:{accept:"application/json","user-agent":"FamilyPickem/1.0"}});
+if(!response.ok)throw new Error(`ESPN ${response.status}`);
+const payload:any=await response.json(),data=payload.content?.sbData||payload,now=Date.now(),stmts:D1PreparedStatement[]=[]; for(const event of data.events||[]){const c=event.competitions?.[0],home=c?.competitors?.find((x:any)=>x.homeAway==="home"),away=c?.competitors?.find((x:any)=>x.homeAway==="away");if(!home||!away)continue;const values=[String(event.id),SEASON,week,event.date,event.status?.type?.shortDetail||"Scheduled",event.status?.type?.completed?1:0,String(home.team.id),home.team.abbreviation,home.team.displayName,home.team.logo||null,score(home.score),String(away.team.id),away.team.abbreviation,away.team.displayName,away.team.logo||null,score(away.score),home.winner?String(home.team.id):away.winner?String(away.team.id):null,now];
   stmts.push(env.DB.prepare("INSERT INTO games(id,season,week,start_time,status,completed,home_id,home_abbr,home_name,home_logo,home_score,away_id,away_abbr,away_name,away_logo,away_score,winner_id,source_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET start_time=excluded.start_time,status=excluded.status,completed=excluded.completed,home_score=excluded.home_score,away_score=excluded.away_score,winner_id=excluded.winner_id,home_logo=excluded.home_logo,away_logo=excluded.away_logo,source_updated_at=excluded.source_updated_at").bind(...values));
  }if(stmts.length)await env.DB.batch(stmts);
 }

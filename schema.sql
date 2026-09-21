@@ -11,3 +11,4 @@ CREATE TABLE IF NOT EXISTS picks (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL REF
 CREATE INDEX IF NOT EXISTS idx_picks_pool_user ON picks(pool_id,user_id);
 CREATE TABLE IF NOT EXISTS tiebreakers (pool_id TEXT NOT NULL REFERENCES pools(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, week INTEGER NOT NULL, guess INTEGER NOT NULL CHECK(guess >= 0 AND guess <= 200), updated_at INTEGER NOT NULL, PRIMARY KEY(pool_id,user_id,week));
 CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL, old_value TEXT, new_value TEXT, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
